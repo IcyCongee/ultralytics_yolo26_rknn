@@ -13,15 +13,24 @@ def export_to_rknn_onnx(model_path="yolov26n.pt", imgsz=640):
     pytorch_model.eval()
 
     # ==========================================
-    # 【核心黑客操作】：强行触发我们在 head.py 写的 NPU 拦截逻辑
+    # 【核心操作】：强行触发我们在 head.py 写的 NPU 拦截逻辑
     # 绕过官方复杂的格式白名单验证，直接在底层模块注入 flag
     # ==========================================
     print("[2] 正在注入 RKNN 导出标志位 ...")
+    # 引入 Detect 基类，用于严谨的类型判断
+    from ultralytics.nn.modules.head import Detect 
+    
+    flag_injected = False
     for m in pytorch_model.modules():
-        if type(m).__name__ == "Detect":
-            m.export = True       # 告诉 head 我们在导出模式
-            m.format = "rknn"     # 完美契合 if self.format == 'rknn': 的拦截条件
-            print(" -> 成功锁定 Detect 头的输出格式为散装 rknn 格式！")
+        # 只要是 Detect 的子类（包括 v10Detect, YOLOEDetect 等），统统拦截！
+        if isinstance(m, Detect):
+            m.export = True       
+            m.format = "rknn"     
+            flag_injected = True
+            print(f" -> 成功锁定底层检测头 [{type(m).__name__}]，已注入散装 rknn 格式标志位！")
+            
+    if not flag_injected:
+        print("⚠️ 警告：未找到任何 Detect 模块，拦截失败，导出的 ONNX 可能不是 9 个张量！")
 
     # ==========================================
     # 【锁定静态维度】：NPU 最喜欢的死规定
