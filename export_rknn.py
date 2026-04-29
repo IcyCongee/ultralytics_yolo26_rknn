@@ -1,8 +1,22 @@
+import sys
+import os
+
+# 【强制接管环境变量】
+# 获取当前 export_rknn.py 所在的文件夹路径 (即你的项目根目录)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# 强行把当前目录插到 Python 搜索路径的绝对第一位！(索引为 0)
+sys.path.insert(0, current_dir)
+
+import ultralytics
+print(ultralytics.__file__)
+
+import onnx
 import torch
 from ultralytics import YOLO
-import onnx
 
-def export_to_rknn_onnx(model_path="yolov26n.pt", imgsz=640):
+
+
+def export_to_rknn_onnx(model_path="yolo26n.pt", imgsz=640):
     """
     一键导出适配 rknn 的纯净版 ONNX
     """
@@ -12,10 +26,6 @@ def export_to_rknn_onnx(model_path="yolov26n.pt", imgsz=640):
     pytorch_model = model.model
     pytorch_model.eval()
 
-    # ==========================================
-    # 【核心操作】：强行触发我们在 head.py 写的 NPU 拦截逻辑
-    # 绕过官方复杂的格式白名单验证，直接在底层模块注入 flag
-    # ==========================================
     print("[2] 正在注入 RKNN 导出标志位 ...")
     # 引入 Detect 基类，用于严谨的类型判断
     from ultralytics.nn.modules.head import Detect 
@@ -32,17 +42,11 @@ def export_to_rknn_onnx(model_path="yolov26n.pt", imgsz=640):
     if not flag_injected:
         print("⚠️ 警告：未找到任何 Detect 模块，拦截失败，导出的 ONNX 可能不是 9 个张量！")
 
-    # ==========================================
-    # 【锁定静态维度】：NPU 最喜欢的死规定
-    # ==========================================
     print(f"[3] 正在构造静态虚拟输入 (Batch=1, Size={imgsz}x{imgsz}) ...")
     # 强行生成一个固定的假图片，这就把 Batch Size 彻底锁死在了 1
     dummy_input = torch.randn(1, 3, imgsz, imgsz)
 
-    # ==========================================
-    # 【执行纯净导出】：直接调用底层的 torch.onnx
-    # ==========================================
-    output_path = model_path.replace(".pt", "_rknn_opt.onnx")
+    output_path = model_path.replace(".pt", ".onnx")
     print(f"[4] 开始底层 ONNX 导出，锁定 Opset=12 ...")
     
     torch.onnx.export(
@@ -61,4 +65,4 @@ def export_to_rknn_onnx(model_path="yolov26n.pt", imgsz=640):
 
 if __name__ == "__main__":
     # 在这里修改你的模型权重名称和想要的分辨率
-    export_to_rknn_onnx(model_path="yolov26n.pt", imgsz=640)
+    export_to_rknn_onnx(model_path="./yolo26n.pt", imgsz=640)
