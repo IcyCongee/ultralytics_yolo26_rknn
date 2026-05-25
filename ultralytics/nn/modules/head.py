@@ -147,18 +147,17 @@ class Detect(nn.Module):
         self, x: list[torch.Tensor], task_type="Detect"
     ) -> dict[str, torch.Tensor] | torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]] | list[torch.Tensor]:
         """Concatenates and returns predicted bounding boxes and class probabilities."""
-
         # 【新增代码：RKNN 专属 NPU 适配拦截逻辑】
         if getattr(self, "export", False) and getattr(self, "format", "") == "rknn":
             y = []
-            
+
             # YOLOv26 特性：判断当前使用的是标准头(one2many)还是无NMS端到端头(one2one)
             # 在导出 NPU 模型时，通常使用标准的特征提取头
             box_head = self.one2one_cv2 if self.end2end else self.cv2
             cls_head = self.one2one_cv3 if self.end2end else self.cv3
 
             # 兼容其他任务（如 Pose, OBB）调用 Detect 时直接返回原始特征
-            if task_type in ['Pose', 'Obb']:
+            if task_type in ["Pose", "Obb"]:
                 for i in range(self.nl):
                     y.append(torch.cat((box_head[i](x[i]), cls_head[i](x[i])), 1))
                 return y
@@ -167,13 +166,13 @@ class Detect(nn.Module):
             for i in range(self.nl):
                 # 1. 直接塞入边框回归特征图 (不使用 .view 或 torch.cat)
                 y.append(box_head[i](x[i]))
-                
+
                 # 2. 类别特征图经过 Sigmoid 激活后塞入
                 cls = torch.sigmoid(cls_head[i](x[i]))
-                
+
                 # 3. 生成分类求和的置信度 (极大加速 C++ 端的背景过滤)
                 cls_sum = torch.clamp(cls.sum(1, keepdim=True), 0, 1)
-                
+
                 y.append(cls)
                 y.append(cls_sum)
 
